@@ -58,8 +58,24 @@ function newFile(){
   show(BLANK,null,'untitled.html');
   trace('new');
 }
-if('launchQueue'in window)launchQueue.setConsumer(({files})=>{
-  trace('launch',{files:files.length});
+// Test stage: messages from the CLI arrive as web+collabdoc: links (protocol handler in the manifest).
+// They are shown briefly and logged with the delay since the sender's timestamp (t=, ms since epoch).
+function toast(text){
+  const el=document.createElement('div');el.textContent=text;
+  el.style.cssText='position:fixed;bottom:40px;right:8px;z-index:2;background:#ffe;border:1px solid #cc9;padding:6px 10px;font:13px sans-serif';
+  document.body.appendChild(el);setTimeout(()=>el.remove(),5000);
+}
+function protocolMessage(targetURL){
+  const text=new URL(targetURL).searchParams.get('msg');  // the whole web+collabdoc:... link, already decoded
+  if(!text)return;
+  const query=text.includes('?')?text.slice(text.indexOf('?')+1):'';
+  const sent=Number(new URLSearchParams(query).get('t'))||null;
+  trace('protocol-message',{text,delayMs:sent?Date.now()-sent:null,focused:document.hasFocus(),visibility:document.visibilityState});
+  toast('CLI message: '+text);
+}
+if('launchQueue'in window)launchQueue.setConsumer(({files,targetURL})=>{
+  trace('launch',{files:files.length,targetURL:targetURL||null});
+  if(targetURL&&targetURL.includes('msg='))protocolMessage(targetURL);
   if(files[0])openFile(files[0]).catch(report);
 });
 
