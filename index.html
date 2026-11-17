@@ -13,8 +13,13 @@
   </style>
 </head>
 <body>
-  <div id="tools"><button id="save">Save</button><button id="log">Test log</button></div>
-  <iframe id="doc" title="HTML document" sandbox="allow-same-origin" srcdoc="<body>Install CollabDoc, then select Open with → CollabDoc for a local HTML file.</body>"></iframe>
+  <div id="tools">
+    <button id="new" title="New file (Ctrl+N)">New</button>
+    <button id="open" title="Open file (Ctrl+O)">Open</button>
+    <button id="save" title="Save (Ctrl+S)">Save</button>
+    <button id="log">Test log</button>
+  </div>
+  <iframe id="doc" title="HTML document" sandbox="allow-same-origin" src="./sample-doc.html"></iframe>
   <div id="setup"><a href="./sample-doc.html" download>Sample HTML</a> · <a id="cli" href="./downloads/CollabDoc-CLI-Setup.exe" download>QuickJS agent installer</a></div>
   <script src="./app.js" defer></script>
 </body>

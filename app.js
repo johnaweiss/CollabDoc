@@ -7,11 +7,17 @@ const trace=(event,details={})=>{
   localStorage.setItem('collabdoc-test-log',JSON.stringify(traces));
   console.info('[CollabDoc]',line);
 };
-let handle=null,dirty=false,saving=false,registered=null,reloadForUpdate=false,updatePrompted=false;
+const FILE_TYPES=[{description:'HTML documents',accept:{'text/html':['.html','.htm']}}];
+const BLANK='<!doctype html>\n<html lang="en">\n<head><meta charset="utf-8"><title>Untitled</title></head>\n<body>\n<p><br></p>\n</body>\n</html>\n';
+// handle: file handle of the open document (null for the sample or a new file).
+// needSaveAs: the next save shows the Save As dialog (true after every open/new).
+let handle=null,docName='sample-doc.html',needSaveAs=true,dirty=false,saving=false,
+  registered=null,reloadForUpdate=false,updatePrompted=false;
 trace('start',{url:location.origin,standalone:matchMedia('(display-mode:standalone)').matches,
   secure:isSecureContext,launchQueue:!!window.launchQueue,serviceWorker:!!navigator.serviceWorker,
   sandbox:frame.getAttribute('sandbox'),userAgent:navigator.userAgent});
 const report=e=>trace('error',{message:String(e?.message||e)});
+const cancelled=e=>e?.name==='AbortError';
 
 // File handle persistence solely for reopening the document after an app update.
 function handles(){return new Promise((resolve,reject)=>{
@@ -28,49 +34,94 @@ async function storedHandle(value){
     req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
   });}finally{db.close();}
 }
+
+// Show html in the frame as the current document; the next save is a Save As.
+function show(html,nextHandle,name){
+  frame.srcdoc=html;
+  handle=nextHandle;docName=name;needSaveAs=true;dirty=false;
+  document.title=name+' — CollabDoc';
+  $('setup').hidden=true;
+}
 async function openFile(next,restore=false){
   if(dirty&&!confirm('Discard unsaved changes?'))return;
   const text=await(await next.getFile()).text();
-  handle=next;frame.srcdoc=text;dirty=false;
-  document.title=next.name+' — CollabDoc';
-  $('setup').hidden=true;
+  show(text,next,next.name);
   trace('open',{name:next.name,length:text.length,restore});
   await storedHandle(next).catch(e=>trace('handle-store-error',{message:String(e)}));
+}
+async function openDialog(){
+  const [picked]=await showOpenFilePicker({types:FILE_TYPES,multiple:false,startIn:handle||'documents'});
+  await openFile(picked);
+}
+function newFile(){
+  if(dirty&&!confirm('Discard unsaved changes?'))return;
+  show(BLANK,null,'untitled.html');
+  trace('new');
 }
 if('launchQueue'in window)launchQueue.setConsumer(({files})=>{
   trace('launch',{files:files.length});
   if(files[0])openFile(files[0]).catch(report);
 });
-frame.addEventListener('load',()=>{
+
+// Make each loaded document editable (designMode on the framed document only; nothing is
+// written into the user's file) and hook its keys. Runs once per loaded document.
+const prepared=new WeakSet();
+function prepare(){
   const doc=frame.contentDocument;
   if(!doc){trace('iframe-access-failed');return;}
+  if(prepared.has(doc))return;
+  prepared.add(doc);
+  doc.designMode='on';
   doc.addEventListener('keydown',onKey);
   doc.addEventListener('input',()=>{if(!dirty)trace('edit-start');dirty=true;},{passive:true});
-  trace('iframe-load',{editable:doc.body?.isContentEditable||false});
-});
+  trace('iframe-load',{editable:doc.designMode==='on',url:doc.URL});
+}
+frame.addEventListener('load',prepare);
+// The sample may finish loading before this deferred script runs.
+if(frame.contentDocument&&frame.contentDocument.URL!=='about:blank'&&frame.contentDocument.readyState==='complete')prepare();
 
+// Returns true when saved, false when the user cancelled the Save As dialog.
 async function save(){
-  if(saving)return;
-  if(!handle)throw Error('Open an HTML file through CollabDoc first');
-  saving=true;trace('save-start',{name:handle.name});
+  if(saving)return false;
+  const doc=frame.contentDocument;
+  if(!doc?.documentElement)throw Error('Document has not loaded');
+  saving=true;trace('save-start',{name:docName,saveAs:needSaveAs||!handle});
   try{
-    if(await handle.requestPermission({mode:'readwrite'})!=='granted')throw Error('Write permission denied');
-    const doc=frame.contentDocument;
-    if(!doc?.documentElement)throw Error('Document has not loaded');
+    let target=handle;
+    if(needSaveAs||!target){
+      // Opens in the folder of the original file, preloaded with its name.
+      target=await showSaveFilePicker({suggestedName:docName,types:FILE_TYPES,startIn:handle||'documents'});
+    }else if(await target.requestPermission({mode:'readwrite'})!=='granted')throw Error('Write permission denied');
     const html=(doc.doctype?'<!doctype '+doc.doctype.name+'>\n':'')+doc.documentElement.outerHTML;
-    const stream=await handle.createWritable();
+    const stream=await target.createWritable();
     try{await stream.write(html);await stream.close();}
     catch(error){await stream.abort().catch(()=>{});throw error;}
-    dirty=false;trace('save-ok',{bytes:new Blob([html]).size});
-  }catch(error){trace('save-error',{message:String(error)});throw error;}
-  finally{saving=false;}
+    handle=target;docName=target.name;needSaveAs=false;dirty=false;
+    document.title=docName+' — CollabDoc';
+    trace('save-ok',{name:docName,bytes:new Blob([html]).size});
+    await storedHandle(target).catch(e=>trace('handle-store-error',{message:String(e)}));
+    return true;
+  }catch(error){
+    if(cancelled(error)){trace('save-cancelled');return false;}
+    trace('save-error',{message:String(error)});throw error;
+  }finally{saving=false;}
 }
-function saveClicked(){save().catch(error=>alert('Save failed: '+error.message));}
-function onKey(e){if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){
-  e.preventDefault();e.stopPropagation();saveClicked();
-}}
+const guard=(label,fn)=>()=>Promise.resolve().then(fn).catch(error=>{
+  if(cancelled(error))return trace(label+'-cancelled');
+  report(error);alert(label+' failed: '+(error?.message||error));
+});
+const saveClicked=guard('Save',save),openClicked=guard('Open',openDialog),newClicked=guard('New',newFile);
+const KEYS={s:saveClicked,o:openClicked,n:newClicked};
+function onKey(e){
+  if(!(e.ctrlKey||e.metaKey)||e.altKey||e.shiftKey)return;
+  const action=KEYS[e.key.toLowerCase()];
+  if(!action)return;
+  e.preventDefault();e.stopPropagation();action();
+}
 window.addEventListener('keydown',onKey);
 $('save').addEventListener('click',saveClicked);
+$('open').addEventListener('click',openClicked);
+$('new').addEventListener('click',newClicked);
 $('log').addEventListener('click',()=>{
   const blob=new Blob([traces.join('\n')+'\n'],{type:'text/plain'});
   const url=URL.createObjectURL(blob),a=document.createElement('a');
@@ -78,13 +129,8 @@ $('log').addEventListener('click',()=>{
   setTimeout(()=>URL.revokeObjectURL(url),10000);
 });
 
-// Download may be blocked because appinstalled is not always a user gesture.
-// Keep a visible fallback link for the user to initiate the same download.
-function downloadCli(){
-  trace('cli-download-attempt');
-  $('cli').click();
-}
-window.addEventListener('appinstalled',()=>{trace('appinstalled');downloadCli();});
+// The installer is never downloaded automatically; the visible link starts the download.
+window.addEventListener('appinstalled',()=>trace('appinstalled'));
 
 // Ask on EVERY launch; Chrome fetches new service-worker code from the HTTPS origin.
 async function checkUpdates(){
@@ -97,10 +143,10 @@ async function checkUpdates(){
     if(!confirm('CollabDoc update available. Install now?'))return trace('update-declined');
     if(dirty){
       if(!confirm('Save your document before updating?'))return trace('update-deferred-unsaved');
-      try{await save();}catch(e){return report(e);}
+      try{if(!await save())return trace('update-deferred-unsaved');}catch(e){return report(e);}
     }
     reloadForUpdate=true;
-    sessionStorage.setItem('collabdoc-reopen','1');
+    if(handle)sessionStorage.setItem('collabdoc-reopen','1');
     registered.waiting.postMessage({type:'ACTIVATE'});
     trace('update-accepted');
   };
