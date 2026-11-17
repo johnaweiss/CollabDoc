@@ -66,14 +66,29 @@ function toast(text){
   el.style.cssText='position:fixed;bottom:40px;right:8px;z-index:2;background:#ffe;border:1px solid #cc9;padding:6px 10px;font:13px sans-serif';
   document.body.appendChild(el);setTimeout(()=>el.remove(),5000);
 }
-function protocolMessage(targetURL){
-  const text=new URL(targetURL).searchParams.get('msg');  // the whole web+collabdoc:... link, already decoded
-  if(!text)return;
+// source: 'protocol' (link) or 'relay' (WebSocket); both log the same delay measure.
+function message(source,text){
   const query=text.includes('?')?text.slice(text.indexOf('?')+1):'';
   const sent=Number(new URLSearchParams(query).get('t'))||null;
-  trace('protocol-message',{text,delayMs:sent?Date.now()-sent:null,focused:document.hasFocus(),visibility:document.visibilityState});
-  toast('CLI message: '+text);
+  trace(source+'-message',{text,delayMs:sent?Date.now()-sent:null,focused:document.hasFocus(),visibility:document.visibilityState});
+  toast('CLI message ('+source+'): '+text);
 }
+function protocolMessage(targetURL){
+  const text=new URL(targetURL).searchParams.get('msg');  // the whole web+collabdoc:... link, already decoded
+  if(text)message('protocol',text);
+}
+// Test stage: a local relay program on this computer (ws://127.0.0.1:47615) forwards CLI messages.
+// Connects at start and when the window regains focus; never on a timer.
+let relay=null;
+function connectRelay(){
+  if(relay&&(relay.readyState===WebSocket.OPEN||relay.readyState===WebSocket.CONNECTING))return;
+  try{relay=new WebSocket('ws://127.0.0.1:47615');}catch(e){trace('relay-error',{message:String(e)});return;}
+  relay.onopen=()=>trace('relay-open');
+  relay.onclose=e=>trace('relay-close',{code:e.code});
+  relay.onmessage=e=>message('relay',String(e.data));
+}
+connectRelay();
+window.addEventListener('focus',connectRelay);
 if('launchQueue'in window)launchQueue.setConsumer(({files,targetURL})=>{
   trace('launch',{files:files.length,targetURL:targetURL||null});
   if(targetURL&&targetURL.includes('msg='))protocolMessage(targetURL);
