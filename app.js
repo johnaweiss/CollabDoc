@@ -66,19 +66,31 @@ function toast(text){
   el.style.cssText='position:fixed;bottom:40px;right:8px;z-index:2;background:#ffe;border:1px solid #cc9;padding:6px 10px;font:13px sans-serif';
   document.body.appendChild(el);setTimeout(()=>el.remove(),5000);
 }
-// source: 'protocol' (link) or 'relay' (WebSocket); both log the same delay measure.
+// Messages from the CLI, through the relay (source 'relay') or as web+collabdoc: links (source 'protocol').
+// connect: connect to the relay. agent-saved: the agent saved a file; shown in the footer and acknowledged,
+// but the document is not reloaded yet. Anything else: earlier delivery tests, logged with their delay.
 function message(source,text){
-  const query=text.includes('?')?text.slice(text.indexOf('?')+1):'';
-  const sent=Number(new URLSearchParams(query).get('t'))||null;
-  trace(source+'-message',{text,delayMs:sent?Date.now()-sent:null,focused:document.hasFocus(),visibility:document.visibilityState});
+  const body=text.replace(/^web\+collabdoc:/i,''),kind=body.split('?')[0];
+  const params=new URLSearchParams(body.includes('?')?body.slice(body.indexOf('?')+1):'');
+  const sent=Number(params.get('t'))||null,delayMs=sent?Date.now()-sent:null;
+  if(kind==='connect'){trace('connect-link',{source});connectRelay();return;}
+  if(kind==='agent-saved'){
+    const file=params.get('file')||'',version=params.get('v')||'';
+    trace('agent-saved',{source,file,version,delayMs,open:file===docName});
+    status('Agent saved '+file+(file===docName?' (not reloaded yet)':''),4000);
+    if(relay&&relay.readyState===WebSocket.OPEN)relay.send('ack '+version);
+    return;
+  }
+  trace(source+'-message',{text,delayMs,focused:document.hasFocus(),visibility:document.visibilityState});
   toast('CLI message ('+source+'): '+text);
 }
 function protocolMessage(targetURL){
   const text=new URL(targetURL).searchParams.get('msg');  // the whole web+collabdoc:... link, already decoded
   if(text)message('protocol',text);
 }
-// Test stage: a local relay program on this computer (ws://127.0.0.1:47615) forwards CLI messages.
-// Connects at start and when the window regains focus; never on a timer.
+// The relay: a local program on this computer (ws://127.0.0.1:47615), started by the CLI, that carries
+// messages between the CLI and this app. Connects at start, when the window regains focus, and on a
+// web+collabdoc:connect link from the CLI; never on a timer.
 let relay=null;
 function connectRelay(){
   if(relay&&(relay.readyState===WebSocket.OPEN||relay.readyState===WebSocket.CONNECTING))return;
@@ -130,7 +142,9 @@ async function save(){
     catch(error){await stream.abort().catch(()=>{});throw error;}
     handle=target;docName=target.name;needSaveAs=false;dirty=false;
     document.title=APP+' — '+docName;
-    trace('save-ok',{name:docName,bytes:new Blob([html]).size});
+    const bytes=new Blob([html]).size;
+    trace('save-ok',{name:docName,bytes});
+    if(relay&&relay.readyState===WebSocket.OPEN)relay.send('human-saved '+docName+' '+bytes);  // alert for the agent
     await storedHandle(target).catch(e=>trace('handle-store-error',{message:String(e)}));
     return true;
   }catch(error){
