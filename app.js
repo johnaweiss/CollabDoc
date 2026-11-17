@@ -129,8 +129,13 @@ $('log').addEventListener('click',()=>{
   setTimeout(()=>URL.revokeObjectURL(url),10000);
 });
 
-// The installer is never downloaded automatically; the visible link starts the download.
-window.addEventListener('appinstalled',()=>trace('appinstalled'));
+// Download may be blocked because appinstalled is not always a user gesture.
+// Keep a visible fallback link for the user to initiate the same download.
+function downloadCli(){
+  trace('cli-download-attempt');
+  $('cli').click();
+}
+window.addEventListener('appinstalled',()=>{trace('appinstalled');downloadCli();});
 
 // Ask on EVERY launch; Chrome fetches new service-worker code from the HTTPS origin.
 async function checkUpdates(){
