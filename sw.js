@@ -1,6 +1,6 @@
 // The build script replaces BUILD_ID when website resources change.
 // 2026-11-17: rebuilt only to test the "Updated" message after an update.
-const CACHE='collabdoc-172280B41EB4';
+const CACHE='collabdoc-429F94605D90';
 // App files only (sample-doc.html ships with the app). User documents are never cached.
 const ASSETS=['./index.html','./app.js','./sample-doc.html','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil(

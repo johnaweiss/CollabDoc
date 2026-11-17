@@ -177,11 +177,25 @@ $('log').addEventListener('click',()=>{
 
 // Download may be blocked because appinstalled is not always a user gesture.
 // Keep a visible fallback link for the user to initiate the same download.
-function downloadCli(){
-  trace('cli-download-attempt');
+// The CLI's fingerprint (downloads/cli-version.json) is remembered when its installer is downloaded, so an
+// app update downloads the CLI again only when the CLI changed.
+async function cliFingerprint(){
+  try{return (await(await fetch('./downloads/cli-version.json',{cache:'no-store'})).json()).cli||null;}
+  catch(e){trace('cli-version-unavailable',{message:String(e)});return null;}
+}
+async function rememberCli(){const id=await cliFingerprint();if(id)try{localStorage.setItem('collabdoc-cli',id);}catch{}}
+function downloadCli(reason){
+  trace('cli-download-attempt',{reason});
   $('cli').click();
 }
-window.addEventListener('appinstalled',()=>{trace('appinstalled');downloadCli();});
+async function downloadCliIfChanged(){
+  const id=await cliFingerprint();let last=null;
+  try{last=localStorage.getItem('collabdoc-cli');}catch{}
+  trace('cli-check',{current:id,last});
+  if(id&&id!==last)downloadCli('cli changed');
+}
+$('cli').addEventListener('click',()=>{rememberCli();});  // manual or automatic, the downloaded CLI is recorded
+window.addEventListener('appinstalled',()=>{trace('appinstalled');downloadCli('app installed');});
 
 // Ask on EVERY launch; Chrome fetches new service-worker code from the HTTPS origin.
 async function checkUpdates(){
@@ -222,6 +236,7 @@ function status(text,ms){const el=$('status');el.textContent=text;el.hidden=fals
 if(sessionStorage.getItem('collabdoc-updated')==='1'){
   sessionStorage.removeItem('collabdoc-updated');
   status('Updated',4000);trace('updated-shown',{version:VERSION});
+  downloadCliIfChanged();  // an update with a new CLI downloads its installer
 }
 if(sessionStorage.getItem('collabdoc-reopen')==='1'){
   sessionStorage.removeItem('collabdoc-reopen');
