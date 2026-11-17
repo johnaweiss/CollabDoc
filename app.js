@@ -7,13 +7,14 @@ const trace=(event,details={})=>{
   localStorage.setItem('collabdoc-test-log',JSON.stringify(traces));
   console.info('[CollabDoc]',line);
 };
+const VERSION='v6',APP='CollabDoc '+VERSION;  // shown in the title bar
 const FILE_TYPES=[{description:'HTML documents',accept:{'text/html':['.html','.htm']}}];
 const BLANK='<!doctype html>\n<html lang="en">\n<head><meta charset="utf-8"><title>Untitled</title></head>\n<body>\n<p><br></p>\n</body>\n</html>\n';
 // handle: file handle of the open document (null for the sample or a new file).
 // needSaveAs: the next save shows the Save As dialog (true after every open/new).
 let handle=null,docName='sample-doc.html',needSaveAs=true,dirty=false,saving=false,
   registered=null,reloadForUpdate=false,updatePrompted=false;
-trace('start',{url:location.origin,standalone:matchMedia('(display-mode:standalone)').matches,
+trace('start',{version:VERSION,url:location.origin,standalone:matchMedia('(display-mode:standalone)').matches,
   secure:isSecureContext,launchQueue:!!window.launchQueue,serviceWorker:!!navigator.serviceWorker,
   sandbox:frame.getAttribute('sandbox'),userAgent:navigator.userAgent});
 const report=e=>trace('error',{message:String(e?.message||e)});
@@ -39,7 +40,7 @@ async function storedHandle(value){
 function show(html,nextHandle,name){
   frame.srcdoc=html;
   handle=nextHandle;docName=name;needSaveAs=true;dirty=false;
-  document.title=name+' — CollabDoc';
+  document.title=APP+' — '+name;
   $('setup').hidden=true;
 }
 async function openFile(next,restore=false){
@@ -113,7 +114,7 @@ async function save(){
     try{await stream.write(html);await stream.close();}
     catch(error){await stream.abort().catch(()=>{});throw error;}
     handle=target;docName=target.name;needSaveAs=false;dirty=false;
-    document.title=docName+' — CollabDoc';
+    document.title=APP+' — '+docName;
     trace('save-ok',{name:docName,bytes:new Blob([html]).size});
     await storedHandle(target).catch(e=>trace('handle-store-error',{message:String(e)}));
     return true;
@@ -168,6 +169,7 @@ async function checkUpdates(){
     }
     reloadForUpdate=true;
     if(handle)sessionStorage.setItem('collabdoc-reopen','1');
+    sessionStorage.setItem('collabdoc-updated','1');
     registered.waiting.postMessage({type:'ACTIVATE'});
     trace('update-accepted');
   };
@@ -185,6 +187,12 @@ async function checkUpdates(){
     if(reloadForUpdate)location.reload();
   });
   try{await registered.update();trace('update-check-done');}catch(e){trace('update-check-offline',{message:String(e)});}
+}
+// After an accepted update reloads the app, show "Updated" in the footer for a few seconds.
+function status(text,ms){const el=$('status');el.textContent=text;el.hidden=false;setTimeout(()=>{el.hidden=true;},ms);}
+if(sessionStorage.getItem('collabdoc-updated')==='1'){
+  sessionStorage.removeItem('collabdoc-updated');
+  status('Updated',4000);trace('updated-shown',{version:VERSION});
 }
 if(sessionStorage.getItem('collabdoc-reopen')==='1'){
   sessionStorage.removeItem('collabdoc-reopen');

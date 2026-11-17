@@ -3,13 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>CollabDoc</title>
+  <title>CollabDoc v6</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <style>
     html,body{margin:0;width:100%;height:100%;font:14px sans-serif}
     iframe{width:100%;height:100%;border:0}
     #tools{position:fixed;top:8px;right:8px;z-index:1;display:flex;gap:6px}
     #setup{position:fixed;bottom:8px;left:8px;max-width:80%;background:white;padding:5px}
+    #status{position:fixed;bottom:8px;right:8px;z-index:1;background:#efe;border:1px solid #9c9;padding:4px 10px}
   </style>
 </head>
 <body>
@@ -21,6 +22,7 @@
   </div>
   <iframe id="doc" title="HTML document" sandbox="allow-same-origin" src="./sample-doc.html"></iframe>
   <div id="setup"><a href="./sample-doc.html" download>Sample HTML</a> · <a id="cli" href="./downloads/CollabDoc-CLI-Setup.exe" download>Download CollabDoc CLI</a></div>
+  <div id="status" hidden></div>
   <script src="./app.js" defer></script>
 </body>
 </html>
