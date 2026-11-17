@@ -1,4 +1,5 @@
 // The build script replaces BUILD_ID when website resources change.
+// 2026-11-17: rebuilt only to test the "Updated" message after an update.
 const CACHE='collabdoc-__BUILD_ID__';
 // App files only (sample-doc.html ships with the app). User documents are never cached.
 const ASSETS=['./index.html','./app.js','./sample-doc.html','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
